@@ -5,7 +5,7 @@ include .env
 export
 
 mlflow-up:
-	docker compose -f compose.yml up -d mlflow_db mlflow_server
+	docker compose -f compose.yml up -d mlflow_db mlflow_server minio minio_init
 
 ml-platform-up:
 	docker compose -f compose.yml up -d mlflow_server redis qdrant dwh

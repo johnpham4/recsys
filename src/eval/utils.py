@@ -2,7 +2,6 @@ import pandas as pd
 
 from src.id_mapper import IDMapper
 
-
 def create_label_df(
     df,
     user_col="user_id",

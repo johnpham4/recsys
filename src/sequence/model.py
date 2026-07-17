@@ -3,7 +3,7 @@ import torch.nn as nn
 from tqdm.auto import tqdm
 
 
-class SequenceModel(nn.Module):
+class GRUModel(nn.Module):
     def __init__(self, n_users, n_items, embedding_dim, item_embedding=None, dropout=0.2):
         super().__init__()
 
