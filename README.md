@@ -346,7 +346,7 @@ Choose either non-Docker (faster) or Docker (production-ready) version:
 #### Non-Docker Version
 ```bash
 cd $ROOT_DIR/notebooks
-uv run 00-training-pipeline.py
+uv run 001-train-pipeline.py
 uv run 00-batch-reco-pipeline.py
 ```
 

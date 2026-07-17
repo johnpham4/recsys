@@ -34,9 +34,9 @@ services:
       - MLFLOW_CORS_ORIGINS=*
       - MLFLOW_HTTP_REQUEST_MAX_RETRIES=3
       - MLFLOW_HTTP_REQUEST_POOL_MAXSIZE=50
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - MLFLOW_S3_ENDPOINT_URL=https://s3.ap-southeast-2.amazonaws.com
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minio}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minio123}
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - GUNICORN_CMD_ARGS=--timeout 300 --forwarded-allow-ips="*" --proxy-allow-from="*"
     command: >
       mlflow server
@@ -45,6 +45,21 @@ services:
         --host 0.0.0.0
         --port 5000
         --allowed-hosts="*"
+    networks:
+      - recsys
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minio}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minio123}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
     networks:
       - recsys
 
@@ -155,3 +170,4 @@ networks:
 
 volumes:
   mlflow_db_data:
+  minio_data:
