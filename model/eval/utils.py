@@ -1,6 +1,9 @@
 import pandas as pd
 
-from src.id_mapper import IDMapper
+try:
+    from model.id_mapper import IDMapper
+except ImportError:
+    from src.id_mapper import IDMapper
 
 def create_label_df(
     df,

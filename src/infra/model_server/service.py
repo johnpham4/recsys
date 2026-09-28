@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 from loguru import logger
 
 with bentoml.importing():
-    root_dir = os.path.abspath(os.path.join(__file__, "../.."))
-    sys.path.insert(0, root_dir)
+    root_dir = os.path.abspath(os.path.join(__file__, "../../../.."))
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
 
 load_dotenv()
 

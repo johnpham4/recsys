@@ -11,10 +11,16 @@ from datetime import datetime
 
 import random
 import sys
-from .load_examples import custom_openapi
-from .logging_utils import RequestIDMiddleware
-from .models import FeatureRequest, FeatureRequestFeature, FeatureRequestResult
-from .utils import debug_logging_decorator
+try:
+    from src.api.load_examples import custom_openapi
+    from src.middleware.logging_utils import RequestIDMiddleware
+    from src.dto.models import FeatureRequest, FeatureRequestFeature, FeatureRequestResult
+    from src.middleware.utils import debug_logging_decorator
+except ImportError:
+    from .load_examples import custom_openapi
+    from ..middleware.logging_utils import RequestIDMiddleware
+    from ..dto.models import FeatureRequest, FeatureRequestFeature, FeatureRequestResult
+    from ..middleware.utils import debug_logging_decorator
 
 app = FastAPI()
 app.add_middleware(RequestIDMiddleware)

@@ -18,8 +18,12 @@ from evidently.metrics import (
     RecallTopK,
 )
 
-from src.eval.utils import create_label_df, create_rec_df, merge_recs_with_target
-from src.id_mapper import IDMapper
+try:
+    from model.eval.utils import create_label_df, create_rec_df, merge_recs_with_target
+    from model.id_mapper import IDMapper
+except ImportError:
+    from src.eval.utils import create_label_df, create_rec_df, merge_recs_with_target
+    from src.id_mapper import IDMapper
 from .model import SequenceModel
 
 

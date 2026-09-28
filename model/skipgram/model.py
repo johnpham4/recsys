@@ -3,7 +3,10 @@ from typing import Any, Dict
 import torch
 import torch.nn as nn
 
-from src.skipgram.dataset import SkipGramDataset
+try:
+    from model.skipgram.dataset import SkipGramDataset
+except ImportError:
+    from src.skipgram.dataset import SkipGramDataset
 
 
 class SkipGram(nn.Module):

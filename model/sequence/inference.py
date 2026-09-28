@@ -4,7 +4,10 @@ import mlflow.pyfunc
 import torch
 import torch.nn as nn
 
-from src.id_mapper import IDMapper
+try:
+    from model.id_mapper import IDMapper
+except ImportError:
+    from src.id_mapper import IDMapper
 from .model import SequenceModel
 
 class SequenceModelWrapper(mlflow.pyfunc.PythonModel):

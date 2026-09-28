@@ -3,7 +3,7 @@ FROM python:3.11.9-slim
 
 WORKDIR /app
 
-# Install Torch first because it's required but slowed to install
+# Install Torch first because it's required but slow to install
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
     pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu && \
@@ -22,9 +22,11 @@ RUN pip install -r requirements.txt && \
 # Remove as no need after installation
 RUN rm -f requirements.txt
 
-COPY model_server /app/model_server
 COPY src /app/src
+COPY model /app/model
+
+ENV PYTHONPATH=/app
 
 EXPOSE 3000
 
-WORKDIR /app/model_server
+CMD ["bentoml", "serve", "src.infra.model_server.service:SeqRPService"]
