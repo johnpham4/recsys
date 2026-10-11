@@ -98,15 +98,7 @@ class RecSysTools:
 
         # 2. Fallback nếu Redis chưa bật: lấy từ catalog Parquet
         if not rec_items and self._catalog_df is not None and not self._catalog_df.empty:
-            sample_asins = self._catalog_df["parent_asin"].head(top_k).tolist()
-            for rank, asin in enumerate(sample_asins, start=1):
-                rec_items.append(
-                    RecommendedProduct(
-                        item_id=str(asin),
-                        score=round(0.95 - (rank - 1) * 0.05, 4),
-                        rank=rank
-                    )
-                )
+            rec_items = []
 
         return RecommendedResult(
             user_id=user_id,

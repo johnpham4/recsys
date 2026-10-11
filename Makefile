@@ -85,8 +85,11 @@ modal-train-gru:
 
 modal-train: modal-train-bert
 
-modal-benchmark:
-	uv run --with modal modal run modal/modal_runner.py::run --cmd "python scripts/benchmark_serving.py"
+locust:
+	uv run locust -f scripts/locustfile.py --host http://localhost:8000
+
+locust-headless:
+	uv run locust -f scripts/locustfile.py --host http://localhost:8000 --headless -u 30 -r 5 --run-time 30s
 
 
 modal-download:
