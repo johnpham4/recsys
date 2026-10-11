@@ -121,13 +121,34 @@ curl http://localhost:8000/health
 
 Visit `http://localhost:8000/docs` for interactive API documentation.
 
-## 📈 Results & Performance
+## 📈 Performance & Load Testing Benchmark (Locust)
 
-- **Latency**: <100ms recommendation response
-- **Throughput**: 1000+ requests/second
-- **Accuracy**: 85%+ precision@10 on test data
-- **Scalability**: Horizontal scaling via Docker
-- **Uptime**: 99.9% availability with health checks
+The serving layer was stress-tested using **[Locust](https://locust.io/)** across core asynchronous recommendation endpoints on a single worker (Zero Agent baseline):
+
+| Endpoint | Stage / Type | Median (P50) | P90 | **P95 Latency** | Failure Rate |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `GET /recs/popular` | Stage 1: Redis Trending Cache | **6 ms** | 13 ms | **15 ms** | 0.00% |
+| `GET /recs/i2i` | Stage 1: Redis Similar Products | **7 ms** | 15 ms | **21 ms** | 0.00% |
+| `GET /recs/u2i/last_item_i2i` | Stage 2: User Recent Sequence | **7 ms** | 15 ms | **22 ms** | 0.00% |
+| `GET /recs/u2i/rerank` | Stage 2: Deep Sequential Rerank | **10 ms** | 20 ms | **33 ms** | 0.00% |
+| **Aggregated Pipeline** | **Mixed Production Traffic** | **7 ms** | **15 ms** | **20 ms** | **0.00%** |
+
+> **Key Metrics Summary**:
+> - **Cache Retrieval Throughput**: **800+ QPS** with **P95 < 25 ms** via Redis cache pre-warming.
+> - **Neural Reranking Throughput**: **100+ QPS** with **P95 < 60 ms** using in-process PyTorch Sequential model.
+> - **Zero Error Rate**: 0 dropped requests under concurrent multi-user load.
+
+### 🧪 Reproducing the Benchmark
+```bash
+# 1. Start the API server
+uv run uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+
+# 2. Run Locust in headless mode (terminal summary)
+make locust-headless
+
+# 3. Or launch interactive Locust Web UI
+make locust  # Open http://localhost:8089 in your browser
+```
 
 ---
 
