@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import torch
 import lightning as l
 import torch.nn as nn
@@ -57,8 +58,8 @@ class LitSequence(l.LightningModule):
                 "n_users": self.model.n_users,
                 "n_items": self.model.n_items,
                 "embedding_dim": self.model.item_embedding.embedding_dim,
-                "item_embedding": self.model.item_embedding,
-                "dropout": self.model.dropout
+                "learning_rate": self.learning_rate,
+                "l2_reg": self.l2_reg,
             }
         )
 
@@ -69,7 +70,7 @@ class LitSequence(l.LightningModule):
         labels = batch["rating"]
         loss_fn = self._get_loss_fn()
         predictions = self.model(user_ids, target_items, item_sequences).view(labels.shape)
-        loss = loss_fn(predictions, labels)
+        loss = loss_fn(predictions.clamp(1e-7, 1.0 - 1e-7), labels)
         self.log("train_loss", loss, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
@@ -81,7 +82,7 @@ class LitSequence(l.LightningModule):
         loss_fn = self._get_loss_fn()
 
         predictions = self.model(user_ids, target_items, item_sequences).view(labels.shape)
-        loss = loss_fn(predictions, labels)
+        loss = loss_fn(predictions.clamp(1e-7, 1.0 - 1e-7), labels)
 
         self.val_roc_auc_metric.update(predictions, labels.int())
         current_roc_auc = self.val_roc_auc_metric.compute()
@@ -183,11 +184,11 @@ class LitSequence(l.LightningModule):
             recs = self.model.recommend(
                 torch.tensor(to_rec_df["user_indice"].values, device=self._get_device()),
                 torch.tensor(to_rec_df["item_sequence"].values.tolist(), device=self._get_device()),
-                k=args.top_K,
-                batch_size=4,
+                k=args.top_k,
+                batch_size=16,
             )
         rec_df = pd.DataFrame(recs).pipe(create_rec_df, idm, args.user_col, args.item_col)
-        eval_df = merge_recs_with_target(rec_df, label_df, k=args.top_K,
+        eval_df = merge_recs_with_target(rec_df, label_df, k=args.top_k,
                                          user_col=args.user_col, item_col=args.item_col, rating_col=args.rating_col)
         self.eval_ranking_df = eval_df
 
@@ -203,7 +204,7 @@ class LitSequence(l.LightningModule):
         report = Report(
             metrics=[
                 NDCG(k=args.top_k),
-                RecallTopK(k=args.top_K),
+                RecallTopK(k=args.top_k),
                 PrecisionTopK(k=args.top_k),
                 FBetaTopK(k=args.top_k),
                 Personalization(k=args.top_k),
@@ -219,20 +220,33 @@ class LitSequence(l.LightningModule):
             client = self.logger.experiment
             client.log_artifact(run_id, report_path)
 
-            # Access metrics from snapshot.metric_results in Evidently 0.7.15
-            for metric_id, metric_result in snapshot.metric_results.items():
-                metric_name = metric_result.explicit_metric_id() if hasattr(metric_result, 'explicit_metric_id') else ""
+            if hasattr(snapshot, "metric_results"):
+                for metric_id, metric_result in snapshot.metric_results.items():
+                    metric_name = metric_result.explicit_metric_id() if hasattr(metric_result, 'explicit_metric_id') else ""
+                    val = getattr(metric_result, "value", None)
+                    if val is None:
+                        continue
 
-                if "PersonalizationMetric" in metric_name:
-                    if hasattr(metric_result, 'value'):
-                        client.log_metric(run_id, f"val_PersonalizationMetric", float(metric_result.value))
-                    continue
+                    if "Personalization" in metric_name:
+                        try:
+                            client.log_metric(run_id, f"val_personalization_k{args.top_k}", float(val))
+                        except Exception as e:
+                            logger.warning(f"Failed to log personalization metric: {e}")
+                        continue
 
-                # For metrics with k values (NDCG, Recall, Precision, FBeta)
-                if any(x in metric_name for x in ["NDCG", "Recall", "Precision", "FBeta"]):
-                    if hasattr(metric_result, 'value') and isinstance(metric_result.value, dict):
-                        for k, v in metric_result.value.items():
-                            client.log_metric(run_id, f"val_{metric_name}_at_k_as_step", float(v), step=int(k))
+                    if any(x in metric_name for x in ["NDCG", "Recall", "Precision"]):
+                        clean_name = "ndcg" if "NDCG" in metric_name else "recall" if "Recall" in metric_name else "precision"
+                        if isinstance(val, dict):
+                            for k, v in val.items():
+                                try:
+                                    client.log_metric(run_id, f"val_{clean_name}_k{k}", float(v))
+                                except Exception as e:
+                                    logger.warning(f"Failed to log {clean_name}_k{k}: {e}")
+                        elif isinstance(val, (int, float, np.number)):
+                            try:
+                                client.log_metric(run_id, f"val_{clean_name}_k{args.top_k}", float(val))
+                            except Exception as e:
+                                logger.warning(f"Failed to log {clean_name}: {e}")
 
     def _get_loss_fn(self):
         return nn.BCELoss()

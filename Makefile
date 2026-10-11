@@ -1,6 +1,9 @@
 .PHONY:
 .ONESHELL:
 
+PATH := $(HOME)/.local/bin:$(PATH)
+export PATH
+
 include .env
 export
 
@@ -67,3 +70,28 @@ remove-data: remove-feature-store-data
 clean: down remove-data
 
 clean-feature-store: down remove-feature-store-data
+
+modal-status:
+	uv run python modal/modal_track.py
+
+modal-upload:
+	uv run --with modal modal run modal/modal_runner.py::upload_data
+
+modal-train-bert:
+	uv run --with modal modal run modal/modal_runner.py::run --cmd "python model/bert4rec/train.py --epochs 8 --batch-size 128"
+
+modal-train-gru:
+	uv run --with modal modal run modal/modal_runner.py::run --cmd "python model/sequence/train.py --epochs 8 --batch-size 512"
+
+modal-train: modal-train-bert
+
+modal-benchmark:
+	uv run --with modal modal run modal/modal_runner.py::run --cmd "python scripts/benchmark_serving.py"
+
+
+modal-download:
+	uv run --with modal modal run modal/modal_runner.py::download_checkpoints
+
+modal-delete-dataset:
+	uv run --with modal modal volume delete -y recsys-dataset
+

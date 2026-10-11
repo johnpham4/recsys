@@ -62,6 +62,7 @@ class BERT4RecInference:
         if 'hyperparameters' in checkpoint:
             hparams = checkpoint['hyperparameters']
             model = BERT4Rec(
+                num_users=hparams.get('num_users', 10000),
                 num_items=hparams['num_items'],
                 max_seq_len=hparams['max_seq_len'],
                 embed_dim=hparams['embed_dim'],
@@ -74,6 +75,7 @@ class BERT4RecInference:
         else:
             # Fallback: try to load directly
             model = BERT4Rec(
+                num_users=10000,
                 num_items=10000,  # Default, should be overridden
                 max_seq_len=max_seq_len,
                 padding_idx=padding_idx
@@ -130,6 +132,7 @@ class BERT4RecInference:
     def predict_next_item(
         self,
         sequence: List[int],
+        user_id: int = 0,
         top_k: int = 10
     ) -> Dict[str, Any]:
         """
@@ -137,6 +140,7 @@ class BERT4RecInference:
         
         Args:
             sequence: List of item IDs representing user's interaction history
+            user_id: User ID for personalized embedding
             top_k: Number of top predictions to return
         
         Returns:
@@ -148,9 +152,11 @@ class BERT4RecInference:
         with torch.no_grad():
             # Prepare input
             inputs = self._prepare_sequence(sequence)
+            user_ids = torch.tensor([user_id], dtype=torch.long, device=self.device)
             
             # Get predictions
             next_item_logits = self.model.predict_next_item(
+                user_ids,
                 inputs['input_ids'],
                 inputs['attention_mask']
             )
@@ -170,6 +176,7 @@ class BERT4RecInference:
     def recommend_batch(
         self,
         sequences: List[List[int]],
+        user_ids: Optional[List[int]] = None,
         k: int = 10,
         batch_size: int = 32
     ) -> List[Dict[str, Any]]:
@@ -178,6 +185,7 @@ class BERT4RecInference:
         
         Args:
             sequences: List of sequences (each is a list of item IDs)
+            user_ids: Optional list of user IDs corresponding to sequences
             k: Number of recommendations per sequence
             batch_size: Batch size for inference
         
@@ -202,9 +210,15 @@ class BERT4RecInference:
             batch_input_ids = torch.stack(batch_input_ids).to(self.device)
             batch_attention_masks = torch.stack(batch_attention_masks).to(self.device)
             
+            if user_ids is not None:
+                batch_user_ids = torch.tensor(user_ids[i:i + batch_size], dtype=torch.long, device=self.device)
+            else:
+                batch_user_ids = torch.zeros(len(batch_sequences), dtype=torch.long, device=self.device)
+            
             with torch.no_grad():
                 # Get recommendations
                 top_k_items, top_k_scores = self.model.recommend(
+                    batch_user_ids,
                     batch_input_ids,
                     k=k,
                     attention_mask=batch_attention_masks

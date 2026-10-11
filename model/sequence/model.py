@@ -78,3 +78,7 @@ class GRUModel(nn.Module):
             "recommendation": recs,
             "score": scores,
         }
+
+
+SequenceModel = GRUModel
+

@@ -12,7 +12,10 @@ from evidently.metrics import (
     NDCG,
     RecallTopK,
     PrecisionTopK,
+    FBetaTopK,
+    Personalization,
 )
+
 
 try:
     from model.eval.utils import create_label_df, create_rec_df, merge_recs_with_target
@@ -21,7 +24,7 @@ except ImportError:
     from src.eval.utils import create_label_df, create_rec_df, merge_recs_with_target
     from src.id_mapper import IDMapper
 from .model import BERT4Rec
-from .dataset import BERT4RecDataset
+from .dataset import Bert4RecDataset
 
 
 class LitBERT4Rec(L.LightningModule):
@@ -69,6 +72,7 @@ class LitBERT4Rec(L.LightningModule):
         )
 
     def training_step(self, batch, batch_idx):
+        user_ids = batch["user_ids"]
         input_ids = batch["input_ids"]
         labels = batch["labels"]
         attention_mask = batch["attention_mask"]
@@ -77,7 +81,7 @@ class LitBERT4Rec(L.LightningModule):
         labels = torch.where(labels == -1, padding_idx_tensor, labels)
 
         # Forward pass
-        logits = self.model(input_ids, attention_mask)
+        logits = self.model(user_ids, input_ids, attention_mask)
 
         # Calculate loss (only for masked positions)
         # Create mask for non-padding positions
@@ -98,6 +102,7 @@ class LitBERT4Rec(L.LightningModule):
         return masked_loss
 
     def validation_step(self, batch, batch_idx):
+        user_ids = batch["user_ids"]
         input_ids = batch["input_ids"]
         labels = batch["labels"]
         attention_mask = batch["attention_mask"]
@@ -107,7 +112,7 @@ class LitBERT4Rec(L.LightningModule):
         labels = torch.where(labels == -1, padding_idx_tensor, labels)
 
         # Forward pass
-        logits = self.model(input_ids, attention_mask)
+        logits = self.model(user_ids, input_ids, attention_mask)
 
         # Calculate loss (masked language model loss)
         valid_mask = (labels != self.model.padding_idx).float()
@@ -168,7 +173,7 @@ class LitBERT4Rec(L.LightningModule):
         to_rec_df = val_df.sort_values(args.timestamp_col, ascending=True).drop_duplicates(subset=[args.user_col])
         label_df = create_label_df(val_df, args.user_col, args.item_col, args.rating_col, args.timestamp_col)
 
-        inference_dataset = BERT4RecDataset(
+        inference_dataset = Bert4RecDataset(
             df=to_rec_df,
             max_seq_len=self.model.max_seq_len,
             padding_idx=self.model.padding_idx,  # Use model's padding_idx (n_items)
@@ -188,10 +193,12 @@ class LitBERT4Rec(L.LightningModule):
 
         with torch.no_grad():
             for batch_idx, batch in enumerate(inference_loader):
+                user_ids = batch["user_ids"].to(self._get_device())
                 input_ids = batch["input_ids"].to(self._get_device())
                 attention_mask = batch["attention_mask"].to(self._get_device())
 
                 top_k_items, top_k_scores = self.model.recommend(
+                    user_ids,
                     input_ids,
                     k=self.top_k,
                     attention_mask=attention_mask
@@ -239,6 +246,8 @@ class LitBERT4Rec(L.LightningModule):
                 NDCG(k=self.top_k),
                 RecallTopK(k=self.top_k),
                 PrecisionTopK(k=self.top_k),
+                FBetaTopK(k=self.top_k),
+                Personalization(k=self.top_k),
             ]
         )
 
@@ -250,7 +259,38 @@ class LitBERT4Rec(L.LightningModule):
         if "mlflow" in str(self.logger.__class__).lower():
             run_id = self.logger.run_id
             client = self.logger.experiment
+            # 1. Log full interactive HTML dashboard as artifact
             client.log_artifact(run_id, report_path)
+
+            # 2. Log scalar values directly into MLflow metrics table for side-by-side run comparison
+            if hasattr(snapshot, "metric_results"):
+                for metric_id, metric_result in snapshot.metric_results.items():
+                    metric_name = metric_result.explicit_metric_id() if hasattr(metric_result, 'explicit_metric_id') else ""
+                    val = getattr(metric_result, "value", None)
+                    if val is None:
+                        continue
+
+                    if "Personalization" in metric_name:
+                        try:
+                            client.log_metric(run_id, f"val_personalization_k{self.top_k}", float(val))
+                        except Exception as e:
+                            logger.warning(f"Failed to log personalization metric: {e}")
+                        continue
+
+                    if any(x in metric_name for x in ["NDCG", "Recall", "Precision"]):
+                        clean_name = "ndcg" if "NDCG" in metric_name else "recall" if "Recall" in metric_name else "precision"
+                        if isinstance(val, dict):
+                            for k, v in val.items():
+                                try:
+                                    client.log_metric(run_id, f"val_{clean_name}_k{k}", float(v))
+                                except Exception as e:
+                                    logger.warning(f"Failed to log {clean_name}_k{k}: {e}")
+                        elif isinstance(val, (int, float, np.number)):
+                            try:
+                                client.log_metric(run_id, f"val_{clean_name}_k{self.top_k}", float(val))
+                            except Exception as e:
+                                logger.warning(f"Failed to log {clean_name}: {e}")
+
 
 
     def _get_device(self):

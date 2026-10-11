@@ -157,6 +157,7 @@ class BERT4Rec(nn.Module):
     def __init__(
         self,
         num_items,
+        num_users=100000,
         max_seq_len=50,
         embed_dim=256,
         num_layers=6,
@@ -167,6 +168,7 @@ class BERT4Rec(nn.Module):
     ):
         super().__init__()
 
+        self.num_users = num_users
         self.num_items = num_items
         self.max_seq_len = max_seq_len
         self.embed_dim = embed_dim
@@ -176,6 +178,9 @@ class BERT4Rec(nn.Module):
         # Embedding layer uses positive indices only
         self.item_embeddings = nn.Embedding(
             num_items + 1, embed_dim, padding_idx=padding_idx
+        )
+        self.user_embeddings = nn.Embedding(
+            num_users + 1, embed_dim, padding_idx=padding_idx
         )
         self.positional_embeddings = PositionalEmbedding(max_seq_len, embed_dim)
 
@@ -203,7 +208,10 @@ class BERT4Rec(nn.Module):
             elif isinstance(module, nn.Embedding):
                 nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, input_ids, attention_mask=None):
+    def forward(self, user_ids=None, input_ids=None, attention_mask=None):
+        if input_ids is None and user_ids is not None:
+            input_ids = user_ids
+            user_ids = None
 
         padding_idx_tensor = torch.tensor(self.padding_idx, device=input_ids.device)
         input_ids = torch.where(input_ids == -1, padding_idx_tensor, input_ids)
@@ -215,52 +223,68 @@ class BERT4Rec(nn.Module):
         position_embeds = self.positional_embeddings(input_ids)  # [batch_size, seq_len, embed_dim]
 
         x = item_embeds + position_embeds
+        if user_ids is not None:
+            user_embeds = self.user_embeddings(user_ids).unsqueeze(1)  # [batch_size, 1, embed_dim]
+            x = x + user_embeds
+
         x = self.dropout(x)
 
-        # Create causal mask for bidirectional attention (allow full attention)
-        # For BERT4Rec, we use bidirectional attention (not causal like GPT)
-        # So we only need to mask padding tokens
-        key_padding_mask = (attention_mask == 0)  # [batch_size, seq_len]
-
-        # Pass through transformer layers
+        # Pass through transformer layers with attention_mask (1 = attend, 0 = ignore)
         for transformer_block in self.transformer_blocks:
-            x = transformer_block(x, mask=key_padding_mask)
+            x = transformer_block(x, mask=attention_mask)
 
         x = self.layer_norm(x)
         logits = self.masked_output(x)  # [batch_size, seq_len, num_items]
 
         return logits
 
-    def predict_next_item(self, input_sequence, attention_mask=None):
+    def predict_next_item(self, user_ids=None, input_sequence=None, attention_mask=None):
         """
-        Predict the next item given a sequence.
-
-        Args:
-            input_sequence: [batch_size, seq_len] - Item IDs in sequence
-            attention_mask: [batch_size, seq_len] - Mask for padding
-
-        Returns:
-            next_item_logits: [batch_size, num_items] - Logits for next item prediction
+        Predict next item bằng cách chèn [MASK] vào cuối chuỗi chuẩn Paper BERT4Rec.
         """
-        # Get full sequence output
-        logits = self.forward(input_sequence, attention_mask)
+        if input_sequence is None and user_ids is not None:
+            input_sequence = user_ids
+            user_ids = None
 
-        # Use the last non-padding position for next item prediction
-        if attention_mask is not None:
-            # Find last valid position for each sequence
-            seq_lengths = attention_mask.sum(dim=1) - 1  # [batch_size]
-            batch_indices = torch.arange(input_sequence.size(0), device=input_sequence.device)
-            next_item_logits = logits[batch_indices, seq_lengths]  # [batch_size, num_items]
-        else:
-            # Use last position
-            next_item_logits = logits[:, -1, :]  # [batch_size, num_items]
-
+        batch_size, seq_len = input_sequence.size()
+        device = input_sequence.device
+        
+        # Giả sử mask_token là self.padding_idx hoặc token quy ước MASK (ví dụ num_items)
+        mask_token_id = self.padding_idx 
+        # Tạo chuỗi mới dịch sang trái 1 nhịp và chèn MASK vào cuối
+        # [v1, v2, v3, padding] -> [v1, v2, v3, MASK]
+        new_input = input_sequence.clone()
+        new_mask = attention_mask.clone() if attention_mask is not None else torch.ones_like(input_sequence)
+        # Tìm vị trí hợp lệ cuối cùng để thay thế bằng MASK
+        seq_lengths = new_mask.sum(dim=1) # Độ dài thực tế của từng sequence trong batch
+        
+        for i in range(batch_size):
+            length = seq_lengths[i].item()
+            if length < seq_len:
+                # Nếu chuỗi còn chỗ trống (có padding ở sau) -> đặt MASK vào ô trống đầu tiên
+                new_input[i, length] = mask_token_id
+                new_mask[i, length] = 1 # Bật attention cho ô MASK này
+            else:
+                # Nếu chuỗi đã đầy 50 items -> dịch trái 1 nốt, nhét MASK vào ô thứ 50
+                new_input[i, :-1] = new_input[i, 1:].clone()
+                new_input[i, -1] = mask_token_id
+        # Forward chuỗi đã có MASK
+        logits = self.forward(user_ids, new_input, new_mask)
+        # Lấy logits tại ĐÚNG VỊ TRÍ CỦA MASK TOKEN
+        batch_indices = torch.arange(batch_size, device=device, dtype=torch.long)
+        mask_positions = torch.clamp(seq_lengths.long(), max=seq_len - 1).long()
+        next_item_logits = logits[batch_indices, mask_positions] # [batch_size, num_items]
         return next_item_logits
 
-    def recommend(self, input_sequence, k=10, attention_mask=None):
+
+    def recommend(self, user_ids=None, input_sequence=None, k=10, attention_mask=None):
         self.eval()
+        if input_sequence is None and user_ids is not None:
+            input_sequence = user_ids
+            user_ids = None
+
         with torch.no_grad():
-            next_item_logits = self.predict_next_item(input_sequence, attention_mask)
+            next_item_logits = self.predict_next_item(user_ids, input_sequence, attention_mask)
             next_item_scores = torch.softmax(next_item_logits, dim=-1)
 
             top_k_scores, top_k_items = torch.topk(next_item_scores, k, dim=-1)

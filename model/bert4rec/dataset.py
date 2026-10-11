@@ -4,8 +4,7 @@ import numpy as np
 from typing import Dict, Any, Optional
 import random
 
-
-class BERT4RecDataset(Dataset):
+class Bert4RecDataset(Dataset):
     """
     Dataset for BERT4Rec with masked language model training.
 
@@ -41,6 +40,8 @@ class BERT4RecDataset(Dataset):
 
         # Extract sequences from df (already padded with -1)
         self.sequences = df['item_sequence'].values
+        user_col = "user_indice" if "user_indice" in df.columns else "user_id"
+        self.user_ids = df[user_col].values
 
     def _mask_sequence(self, sequence: np.ndarray) -> Dict[str, np.ndarray]:
         """
@@ -136,10 +137,16 @@ class BERT4RecDataset(Dataset):
 
         # Convert to tensors
         return {
+            'user_ids': torch.tensor(self.user_ids[idx], dtype=torch.long),
             'input_ids': torch.tensor(input_ids, dtype=torch.long),
             'labels': torch.tensor(labels, dtype=torch.long),
             'attention_mask': torch.tensor(attention_mask, dtype=torch.long)
         }
+
+
+# Backward compatibility alias
+BERT4RecDataset = Bert4RecDataset
+
 
 
 def create_bert4rec_datasets(
