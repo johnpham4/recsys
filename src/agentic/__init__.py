@@ -1,27 +1,13 @@
 """
-Agentic Multi-Agent Recommendation Platform.
-Hierarchical Supervisor Pattern with Coordinator and Specialist Subagents.
+Agentic Recommendation System powered by LangGraph.
 """
 
-from .contracts import (
-    LeadAgentRequest,
-    AgentChatResponse,
-    AgentTelemetry,
-    RecommendedProduct,
-    ProductEvidence,
-    RecommendedResult,
-    ContextResult
-)
-from .coordinator import CoordinatorAgent
-from .subagents import RecommendationSpecialist, ContextSpecialist
+from .state import RecSysAgentState
+from .prompts import SUPERAGENT_SYSTEM_PROMPT
+from .tools import AGENT_TOOLS
 
 __all__ = [
-    "CoordinatorAgent",
-    "LeadAgentRequest",
-    "AgentChatResponse",
-    "AgentTelemetry",
-    "RecommendedProduct",
-    "ProductEvidence",
-    "RecommendationSpecialist",
-    "ContextSpecialist",
+    "RecSysAgentState",
+    "SUPERAGENT_SYSTEM_PROMPT",
+    "AGENT_TOOLS",
 ]

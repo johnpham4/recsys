@@ -13,21 +13,16 @@ import random
 import sys
 from pathlib import Path
 import pandas as pd
-try:
-    from src.api.load_examples import custom_openapi
-    from src.middleware.logging_utils import RequestIDMiddleware
-    from src.dto.models import FeatureRequest, FeatureRequestFeature, FeatureRequestResult
-    from src.middleware.utils import debug_logging_decorator
-    from src.agentic import CoordinatorAgent, LeadAgentRequest, AgentChatResponse
-except ImportError:
-    from .load_examples import custom_openapi
-    from ..middleware.logging_utils import RequestIDMiddleware
-    from ..dto.models import FeatureRequest, FeatureRequestFeature, FeatureRequestResult
-    from ..middleware.utils import debug_logging_decorator
-    from ..agentic import CoordinatorAgent, LeadAgentRequest, AgentChatResponse
+
+from src.api.load_examples import custom_openapi
+from src.middleware.logging_utils import RequestIDMiddleware
+from src.dto.models import FeatureRequest, FeatureRequestFeature, FeatureRequestResult
+from src.middleware.utils import debug_logging_decorator
+from src.api.thread import router as thread_router
 
 app = FastAPI()
 app.add_middleware(RequestIDMiddleware)
+app.include_router(thread_router)
 
 def _log_filter(record):
     if "rec_id" not in record["extra"]:
@@ -499,37 +494,3 @@ async def feast_fetch_item_sequence(user_id: str):
         "item_sequence": default_seq,
         "item_sequence_ts": [1600000000 + i * 3600 for i in range(len(default_seq))]
     }
-
-
-# ==============================================================================
-# Hierarchical Multi-Agent Recommendation Copilot (Supervisor + Specialists)
-# ==============================================================================
-_agent_coordinator: Optional[CoordinatorAgent] = None
-
-
-def get_agent_coordinator() -> CoordinatorAgent:
-    global _agent_coordinator
-    if _agent_coordinator is None:
-        _agent_coordinator = CoordinatorAgent()
-    return _agent_coordinator
-
-
-@app.get("/api/v1/agent/health", tags=["Multi-Agent Copilot"])
-async def agent_health_check():
-    """Health check for Hierarchical Multi-Agent RecSys Copilot service."""
-    return {
-        "status": "healthy",
-        "service": "Hierarchical Multi-Agent RecSys Copilot",
-        "architecture": "Coordinator + Specialists (Recommendation & Context)",
-    }
-
-
-@app.post("/api/v1/agent/chat", response_model=AgentChatResponse, tags=["Multi-Agent Copilot"])
-@app.post("/api/v2/agent/chat", response_model=AgentChatResponse, tags=["Multi-Agent Copilot"])
-async def agent_chat(request: LeadAgentRequest):
-    """
-    Hierarchical Multi-Agent Recommender Copilot endpoint.
-    Orchestrates Recommendation Specialist + Context Specialist with Grounding & Guardrails.
-    """
-    agent = get_agent_coordinator()
-    return await asyncio.to_thread(agent.chat, request)

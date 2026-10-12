@@ -16,7 +16,10 @@ dependencies = [
     "boto3<2.0.0,>=1.35.37",
     "qdrant-client==1.12.0",
     "sqlalchemy<2.0",
-    "openai<2.0.0,>=1.54.1"
+    "openai<2.0.0,>=1.54.1",
+    "langgraph>=1.2.14",
+    "langchain-openai>=1.1.9",
+    "langgraph-checkpoint-sqlite>=3.1.1",
 ]
 
 name = "recsys-mvp"
