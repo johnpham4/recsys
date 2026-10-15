@@ -17,3 +17,4 @@ class RecSysAgentState(MessagesState):
     user_id: str
     context: Dict[str, Any] = {}
     artifacts: List[Dict[str, Any]] = []
+    plan: List[str] = []
